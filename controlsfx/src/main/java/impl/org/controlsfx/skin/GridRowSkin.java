@@ -84,7 +84,9 @@ public class GridRowSkin<T> extends CellSkinBase<GridRow<T>> {
                         cell = createCell();
                         getChildren().add(cell);
                     }
-                    cell.updateIndex(-1);
+                    // this line causes problems that make the cell value: item->null->item
+                    // see at: https://github.com/controlsfx/controlsfx/issues/1241#issuecomment-1314245553
+                    //cell.updateIndex(-1);
                     cell.updateIndex(cellIndex);
                 }
                 // we are going out of bounds -> exist the loop
