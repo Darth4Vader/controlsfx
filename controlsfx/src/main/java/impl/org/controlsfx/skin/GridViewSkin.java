@@ -29,6 +29,8 @@ package impl.org.controlsfx.skin;
 import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.collections.WeakListChangeListener;
+import javafx.scene.AccessibleAttribute;
+import javafx.scene.control.FocusModel;
 import javafx.scene.control.skin.VirtualContainerBase;
 import javafx.scene.control.skin.VirtualFlow;
 import org.controlsfx.control.GridView;
@@ -191,15 +193,15 @@ public class GridViewSkin<T> extends VirtualContainerBase<GridView<T>, GridRow<T
         row.updateGridView(getSkinnable());
         return row;
     }
-
-    private GridVirtualFlow getFlow() {
+    
+    protected GridVirtualFlow getFlow() {
         return (GridVirtualFlow) getVirtualFlow();
     }
 
     /**
      * Custom VirtualFlow to grant access to protected methods.
      */
-    private class GridVirtualFlow extends VirtualFlow<GridRow<T>> {
+    protected class GridVirtualFlow extends VirtualFlow<GridRow<T>> {
 
         public void recreateCells(){
             super.recreateCells();
@@ -212,5 +214,63 @@ public class GridViewSkin<T> extends VirtualContainerBase<GridView<T>, GridRow<T
         public void reconfigureCells(){
             super.reconfigureCells();
         }
+        
+        public GridRow<T> getPrivateCell(int index) {
+            return super.getPrivateCell(index);
+        }
     }
+    
+    /** {@inheritDoc} */
+    @Override 
+    protected Object queryAccessibleAttribute(AccessibleAttribute attribute, Object... parameters) {
+    	switch (attribute) {
+            case FOCUS_ITEM: {
+            	GridView<T> skinnable = getSkinnable();
+            	if(skinnable != null) {
+                    FocusModel<?> fm = skinnable.getFocusModel();
+                    if (fm == null) {
+                        /*if (placeholderRegion != null && placeholderRegion.isVisible()) {
+                            return placeholderRegion.getChildren().get(0);
+                        } else {*/
+                            return null;
+                        //}
+                    }
+
+                    int focusedIndex = fm.getFocusedIndex();
+                    if (focusedIndex == -1) {
+                        /*if (placeholderRegion != null && placeholderRegion.isVisible()) {
+                            return placeholderRegion.getChildren().get(0);
+                        }*/
+                        if (getItemCount() > 0) {
+                            focusedIndex = 0;
+                        } else {
+                            return null;
+                        }
+                    }
+                    return getFlow().getPrivateCell(focusedIndex);      		
+            	}
+            	return null;
+            }
+            default: return super.queryAccessibleAttribute(attribute, parameters);
+        }
+    }
+    
+	public final int getVisibleRowIndex(int index) {
+    	return getVisibleRow(index).getIndex();
+    }
+	
+	public final GridRow<T> getVisibleRow(int index) {
+    	return getFlow().getPrivateCell(index);
+    }
+    
+	public final int getNumberOfRows() {
+		return getFlow().getCellCount();
+	}
+	
+	public final int getNumberOfColumnsInRow(int row) {
+		if (row < 0 || row >= getNumberOfRows())
+			return -1;
+		GridRow<?> cell = getFlow().getVisibleCell(row);
+		return cell.getChildrenUnmodifiable().size();
+	}
 }

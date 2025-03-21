@@ -108,6 +108,7 @@ public class GridRowSkin<T> extends CellSkinBase<GridRow<T>> {
             cell = createDefaultCellImpl();
         }
         cell.updateGridView(gridView);
+        cell.updateGridRow(getSkinnable());
         return cell;
     }
 
