@@ -33,6 +33,8 @@ import javafx.scene.AccessibleAttribute;
 import javafx.scene.control.FocusModel;
 import javafx.scene.control.skin.VirtualContainerBase;
 import javafx.scene.control.skin.VirtualFlow;
+
+import org.controlsfx.control.GridCell;
 import org.controlsfx.control.GridView;
 
 public class GridViewSkin<T> extends VirtualContainerBase<GridView<T>, GridRow<T>> {
@@ -218,6 +220,10 @@ public class GridViewSkin<T> extends VirtualContainerBase<GridView<T>, GridRow<T
         public GridRow<T> getPrivateCell(int index) {
             return super.getPrivateCell(index);
         }
+        
+		public void scrollTo(int index) {
+			super.scrollTo(index);
+		}
     }
     
     /** {@inheritDoc} */
@@ -225,24 +231,15 @@ public class GridViewSkin<T> extends VirtualContainerBase<GridView<T>, GridRow<T
     protected Object queryAccessibleAttribute(AccessibleAttribute attribute, Object... parameters) {
     	switch (attribute) {
             case FOCUS_ITEM: {
-            	System.out.println("GridViewSkin: FOCUS_ITEM");
             	GridView<T> skinnable = getSkinnable();
             	if(skinnable != null) {
                     FocusModel<?> fm = skinnable.getFocusModel();
                     if (fm == null) {
-                        /*if (placeholderRegion != null && placeholderRegion.isVisible()) {
-                            return placeholderRegion.getChildren().get(0);
-                        } else {*/
-                            return null;
-                        //}
+                        return null;
                     }
 
                     int focusedIndex = fm.getFocusedIndex();
-                    System.out.println("Focused Index: " + focusedIndex);
                     if (focusedIndex == -1) {
-                        /*if (placeholderRegion != null && placeholderRegion.isVisible()) {
-                            return placeholderRegion.getChildren().get(0);
-                        }*/
                         if (getItemCount() > 0) {
                             focusedIndex = 0;
                         } else {
@@ -253,19 +250,39 @@ public class GridViewSkin<T> extends VirtualContainerBase<GridView<T>, GridRow<T
             	}
             	return null;
             }
-            /*case: AccessibleAttribute.focus {
-            	
-            }*/
             default: return super.queryAccessibleAttribute(attribute, parameters);
         }
     }
+    
+	public final GridCell<T> getCellAtIndex(int index) {
+		GridView<T> gridView = getSkinnable();
+		if(gridView != null) {
+			int row = gridView.getRowFromIndex(index);
+			int column = gridView.getColumnFromIndex(index);
+			GridRow<T> gridRow = getFlow().getVisibleCell(row);
+			if (gridRow != null) {
+				return gridRow.getCellAtIndex(column);
+			}
+		}
+		return null;
+	}
+	
+	public final void scrollTo(int index) {
+		GridView<T> gridView = getSkinnable();
+		if(gridView != null) {
+			int row = gridView.getRowFromIndex(index);
+			if(row >= 0) {
+				getFlow().scrollTo(row);
+			}
+		}
+	}
     
 	public final int getVisibleRowIndex(int index) {
     	return getVisibleRow(index).getIndex();
     }
 	
 	public final GridRow<T> getVisibleRow(int index) {
-    	return getFlow().getPrivateCell(index);
+    	return getFlow().getVisibleCell(index);
     }
     
 	public final int getNumberOfRows() {
@@ -275,7 +292,7 @@ public class GridViewSkin<T> extends VirtualContainerBase<GridView<T>, GridRow<T
 	public final int getNumberOfColumnsInRow(int row) {
 		if (row < 0 || row >= getNumberOfRows())
 			return -1;
-		GridRow<?> cell = getFlow().getPrivateCell(row);
+		GridRow<?> cell = getFlow().getVisibleCell(row);
 		return cell.getChildrenUnmodifiable().size();
 	}
 }

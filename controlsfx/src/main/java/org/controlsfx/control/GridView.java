@@ -26,22 +26,19 @@
  */
 package org.controlsfx.control;
 
-import impl.org.controlsfx.skin.GridRow;
-import impl.org.controlsfx.skin.GridRowSkin;
-import impl.org.controlsfx.skin.GridViewSkin;
-
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.controlsfx.control.cell.ColorGridCell;
+
+import impl.org.controlsfx.skin.GridViewSkin;
 import javafx.beans.InvalidationListener;
 import javafx.beans.Observable;
 import javafx.beans.WeakInvalidationListener;
 import javafx.beans.property.DoubleProperty;
 import javafx.beans.property.ObjectProperty;
-import javafx.beans.property.ReadOnlyObjectProperty;
-import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener;
@@ -61,8 +58,6 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.Skin;
 import javafx.scene.paint.Color;
 import javafx.util.Callback;
-
-import org.controlsfx.control.cell.ColorGridCell;
 
 /**
  * A GridView is a virtualised control for displaying {@link #getItems()} in a
@@ -138,12 +133,12 @@ public class GridView<T> extends ControlsFXControl {
         getStyleClass().add(DEFAULT_STYLE_CLASS);
         setItems(items);
         
+        // ...focus model
+        setFocusModel(new GridView.GridViewFocusModel<>(this));
+        
+        
 		skinProperty().addListener((ov, oldSkin, newSkin) -> {
 			if (newSkin != null && getFocusModel() != null) {
-				/*
-				System.out.println("Skini");
-				System.out.println(getPositionFromIndex(0));
-				*/
 				getFocusModel().focus(0);
 			}
 		});
@@ -156,6 +151,59 @@ public class GridView<T> extends ControlsFXControl {
      * Public API
      * 
      **************************************************************************/
+    
+    /**
+     * Scrolls the GridView such that the item in the given index is visible to
+     * the end user.
+     *
+     * @param index The index that should be made visible to the user, assuming
+     *      of course that it is greater than, or equal to 0, and less than the
+     *      size of the items list contained within the given GridView.
+     */
+    public void scrollTo(int index) {
+    	Skin<?> skin = getSkin();
+		if (skin instanceof GridViewSkin) {
+			((GridViewSkin<?>) skin).scrollTo(index);
+		}
+    }
+
+    /**
+     * Scrolls the GridView so that the given object is visible within the viewport.
+     * @param object The object that should be visible to the user.
+     * @since JavaFX 8.0
+     */
+    public void scrollTo(T object) {
+        if( getItems() != null ) {
+            int idx = getItems().indexOf(object);
+            if( idx >= 0 ) {
+            	scrollTo(idx);
+            }
+        }
+    }
+    
+	public int getRowFromIndex(int index) {
+		if(index >= 0) {
+			Skin<?> skin = getSkin();
+			if (skin instanceof GridViewSkin) {
+				GridViewSkin<?> gskin = (GridViewSkin<?>) skin;
+				int maxCellsInRow = gskin.computeMaxCellsInRow();
+				return (int) Math.floor(index / maxCellsInRow);
+			}
+		}
+		return -1;
+    }
+	
+	public int getColumnFromIndex(int index) {
+		if(index >= 0) {
+			Skin<?> skin = getSkin();
+			if (skin instanceof GridViewSkin) {
+				GridViewSkin<?> gskin = (GridViewSkin<?>) skin;
+				int maxCellsInRow = gskin.computeMaxCellsInRow();
+				return index % maxCellsInRow;
+			}
+		}
+		return -1;
+	}
     
     /**
      * {@inheritDoc}
@@ -589,8 +637,8 @@ public class GridView<T> extends ControlsFXControl {
         return focusModel == null ? null : focusModel.get();
     }
     /**
-     * Represents the currently-installed {@link TableViewFocusModel} for this
-     * TableView. Under almost all circumstances leaving this as the default
+     * Represents the currently-installed {@link GridViewFocusModel} for this
+     * GridView. Under almost all circumstances leaving this as the default
      * focus model will suffice.
      * @return focusModel property
      */
@@ -612,23 +660,14 @@ public class GridView<T> extends ControlsFXControl {
     public static class GridViewFocusModel<T> extends FocusModel<T> {
 
         private final GridView<T> gridView;
+        private int itemCount = 0;
 
-        private final GridViewPosition<T> EMPTY_CELL;
-
-        /**
-         * Creates a default GridViewFocusModel instance that will be used to
-         * manage focus of the provided GridView control.
-         *
-         * @param gridView The gridView upon which this focus model operates.
-         * @throws NullPointerException The GridView argument can not be null.
-         */
         public GridViewFocusModel(final GridView<T> gridView) {
             if (gridView == null) {
-                throw new NullPointerException("GridView can not be null");
+                throw new IllegalArgumentException("GridView can not be null");
             }
 
             this.gridView = gridView;
-            this.EMPTY_CELL = new GridViewPosition<>(gridView, null, -1);
 
             itemsObserver = new InvalidationListener() {
                 private WeakReference<ObservableList<T>> weakItemsRef = new WeakReference<>(gridView.getItems());
@@ -644,71 +683,61 @@ public class GridView<T> extends ControlsFXControl {
                 this.gridView.getItems().addListener(weakItemsContentListener);
             }
 
+            updateItemCount();
             updateDefaultFocus();
 
-            focusedCellProperty().addListener(o -> {
-            	/*System.out.println("Notify Changed " + o);
-                gridView.notifyAccessibleAttributeChanged(AccessibleAttribute.FOCUS_ITEM);*/
-            	
-                System.out.println("changed22");
-            	System.out.println(getFocusedIndex());
-            	Object obj = gridView.queryAccessibleAttribute(AccessibleAttribute.FOCUS_ITEM);
-            	System.out.println("Focus Item: " + obj);
-            	/*
-            	GridRow<T> row = (GridRow<T>) gridView.queryAccessibleAttribute(AccessibleAttribute.FOCUS_ITEM);
-            	System.out.println(row);
-            	GridRowSkin<?> skin = (GridRowSkin<?>) row.getSkin();
-            	System.out.println("Hell " + skin.getCellAtIndex(0).getClass());
-            	skin.getCellAtIndex(0).requestFocus();
-            	System.out.println(gridView.getScene().getFocusOwner());
-            	*/
+            focusedIndexProperty().addListener(o -> {
+                gridView.notifyAccessibleAttributeChanged(AccessibleAttribute.FOCUS_ITEM);
             });
+        }
+
+
+        private void updateItemsObserver(ObservableList<T> oldList, ObservableList<T> newList) {
+            // the listview items list has changed, we need to observe
+            // the new list, and remove any observer we had from the old list
+            if (oldList != null) oldList.removeListener(weakItemsContentListener);
+            if (newList != null) newList.addListener(weakItemsContentListener);
+
+            updateItemCount();
+            updateDefaultFocus();
         }
 
         private final InvalidationListener itemsObserver;
 
-        // Listen to changes in the tableview items list, such that when it
+        // Listen to changes in the listview items list, such that when it
         // changes we can update the focused index to refer to the new indices.
         private final ListChangeListener<T> itemsContentListener = c -> {
-            c.next();
+            updateItemCount();
 
-            if (c.wasReplaced() || c.getAddedSize() == getItemCount()) {
-                updateDefaultFocus();
-                return;
-            }
-
-            GridViewPosition<T> focusedCell = getFocusedCell();
-            GridView<T> gridView = focusedCell.getGridView();
-            if(gridView == null)
-            	return;
-            final int focusedIndex = gridView.getIndexOfPosition(focusedCell);
-            if (focusedIndex == -1 || c.getFrom() > focusedIndex) {
-                return;
-            }
-
-            c.reset();
-            boolean added = false;
-            boolean removed = false;
-            int addedSize = 0;
-            int removedSize = 0;
             while (c.next()) {
-                added |= c.wasAdded();
-                removed |= c.wasRemoved();
-                addedSize += c.getAddedSize();
-                removedSize += c.getRemovedSize();
-            }
-            System.out.println("Something");
-            if (added && ! removed) {
-                if (addedSize < c.getList().size()) {
-                    final int newFocusIndex = Math.min(getItemCount() - 1, getFocusedIndex() + addedSize);
-                    focus(newFocusIndex);
+                // looking at the first change
+                int from = c.getFrom();
+
+                if (c.wasReplaced() || c.getAddedSize() == getItemCount()) {
+                    updateDefaultFocus();
+                    return;
                 }
-            } else if (!added && removed) {
-                final int newFocusIndex = Math.max(0, getFocusedIndex() - removedSize);
-                if (newFocusIndex < 0) {
-                    focus(focusedCell.getGridRow(), 0);
-                } else {
-                    focus(newFocusIndex);
+
+                if (getFocusedIndex() == -1 || from > getFocusedIndex()) {
+                    return;
+                }
+
+                c.reset();
+                boolean added = false;
+                boolean removed = false;
+                int addedSize = 0;
+                int removedSize = 0;
+                while (c.next()) {
+                    added |= c.wasAdded();
+                    removed |= c.wasRemoved();
+                    addedSize += c.getAddedSize();
+                    removedSize += c.getRemovedSize();
+                }
+
+                if (added && !removed) {
+                    focus(Math.min(getItemCount() - 1, getFocusedIndex() + addedSize));
+                } else if (!added && removed) {
+                    focus(Math.max(0, getFocusedIndex() - removedSize));
                 }
             }
         };
@@ -716,245 +745,29 @@ public class GridView<T> extends ControlsFXControl {
         private WeakListChangeListener<T> weakItemsContentListener
                 = new WeakListChangeListener<>(itemsContentListener);
 
-        private void updateItemsObserver(ObservableList<T> oldList, ObservableList<T> newList) {
-            // the tableview items list has changed, we need to observe
-            // the new list, and remove any observer we had from the old list
-            if (oldList != null) oldList.removeListener(weakItemsContentListener);
-            if (newList != null) newList.addListener(weakItemsContentListener);
-
-            updateDefaultFocus();
+        @Override protected int getItemCount() {
+            return itemCount;
         }
 
-        /** {@inheritDoc} */
-        protected int getItemCount() {
-            if (gridView.getItems() == null) return -1;
-            return gridView.getItems().size();
-        }
-
-        /** {@inheritDoc} */
-        protected T getModelItem(int index) {
-            if (gridView.getItems() == null) return null;
-
-            if (index < 0 || index >= getItemCount()) return null;
+        @Override protected T getModelItem(int index) {
+            if (isEmpty()) return null;
+            if (index < 0 || index >= itemCount) return null;
 
             return gridView.getItems().get(index);
         }
 
-        /**
-         * The position of the current item in the GridView which has the focus.
-         */
-        private ReadOnlyObjectWrapper<GridViewPosition<T>> focusedCell;
-        public final ReadOnlyObjectProperty<GridViewPosition<T>> focusedCellProperty() {
-            return focusedCellPropertyImpl().getReadOnlyProperty();
-        }
-        private void setFocusedCell(GridViewPosition<T> value) {
-        	System.out.println(getFocusedCell());
-        	System.out.println("Le't Set a new Value");
-        	System.out.println(value);
-        	focusedCellPropertyImpl().set(value);
-        }
-        public final GridViewPosition<T> getFocusedCell() { return focusedCell == null ? EMPTY_CELL : focusedCell.get(); }
-
-        private ReadOnlyObjectWrapper<GridViewPosition<T>> focusedCellPropertyImpl() {
-            if (focusedCell == null) {
-                focusedCell = new ReadOnlyObjectWrapper<>(EMPTY_CELL) {
-                    private GridViewPosition<T> old;
-                    @Override protected void invalidated() {
-                        if (get() == null) return;
-
-                        if (old == null || !old.equals(get())) {
-                            // manually update the focus properties to ensure consistency
-                        	GridViewFocusModel.super.focus(gridView.getIndexOfPosition(get()));
-
-                            old = get();
-                        }
-                    }
-
-                    @Override
-                    public Object getBean() {
-                        return GridViewFocusModel.this;
-                    }
-
-                    @Override
-                    public String getName() {
-                        return "focusedCell";
-                    }
-                };
-            }
-            return focusedCell;
+        private boolean isEmpty() {
+            return itemCount == -1;
         }
 
-
-        /**
-         * Causes the item at the given index to receive the focus.
-         *
-         * @param row The row of the item to give focus to. Can be null.
-         * @param column The column index of the item to give focus to.
-         */
-        public void focus(GridRow<T> row, int column) {
-            if (column < 0 || column >= getItemCount()) {
-                setFocusedCell(EMPTY_CELL);
+        private void updateItemCount() {
+            if (gridView == null) {
+                itemCount = -1;
             } else {
-                GridViewPosition<T> oldFocusCell = getFocusedCell();
-                GridViewPosition<T> newFocusCell = new GridViewPosition<>(gridView, row, column);
-                setFocusedCell(newFocusCell);
-
-                if (newFocusCell.equals(oldFocusCell)) {
-                    // manually update the focus properties to ensure consistency
-                	super.focus(gridView.getIndexOfPosition(newFocusCell));
-                }
+                List<T> items = gridView.getItems();
+                itemCount = items == null ? -1 : items.size();
             }
         }
-
-        /**
-         * Convenience method for setting focus on a particular row or cell
-         * using a {@link GridViewPosition}.
-         *
-         * @param pos The table position where focus should be set.
-         */
-        public void focus(GridViewPosition<T> pos) {
-            if (pos == null) return;
-            focus(pos.getGridRow(), pos.getColumn());
-        }
-
-
-        /* *********************************************************************
-         *                                                                     *
-         * Public API                                                          *
-         *                                                                     *
-         **********************************************************************/
-
-        /**
-         * Tests whether the row / cell at the given location currently has the
-         * focus within the GridView.
-         */
-        public boolean isFocused(GridRow<T> row, int column) {
-            if (column < 0) return false;
-
-            GridViewPosition<T> cell = getFocusedCell();
-            System.out.println("isFocused: " + cell);
-            if(cell != null) {
-            	System.out.println("Row: " + row.equals(cell.getGridRow()));
-            	if(cell.getGridRow() != null) System.out.println(row.getIndex() + " : " + cell.getGridRow().getIndex());
-            	System.out.println(row + " : " + cell.getGridRow());
-            }
-            boolean rowMatch = row == null || (cell != null && row.equals(cell.getGridRow()));
-
-            return rowMatch && cell.getColumn() == column;
-        }
-
-        /**
-         * Causes the item at the given index to receive the focus. This does not
-         * cause the current selection to change. Updates the focusedItem and
-         * focusedIndex properties such that <code>focusedIndex = -1</code> unless
-         * <pre><code>0 &lt;= index &lt; model size</code></pre>.
-         *
-         * @param index The index of the item to get focus.
-         */
-        @Override public void focus(int index) {
-        	System.out.println("Focusing Index: " + index);
-        	System.out.println("Focus Me: " + index + " , " + getItemCount());
-            if (index < 0 || index >= getItemCount()) {
-                setFocusedCell(EMPTY_CELL);
-            } else {
-            	//GridRow<T> row = gridView.in
-            	System.out.println("Focus Index: " + index);
-            	GridViewPosition<T> position = gridView.getPositionFromIndex(index);
-            	if(position == null)
-            		setFocusedCell(EMPTY_CELL);
-            	else
-            		setFocusedCell(position);
-            	//setFocusedCell(gridView.getPositionFromIndex(index));
-                //setFocusedCell(new GridViewPosition<>(gridView, null, index));
-            }
-        }
-
-        /**
-         * Attempts to move focus to the cell above the currently focused cell.
-         */
-        public void focusAboveCell() {
-            /*GridViewPosition<T> cell = getFocusedCell();
-
-            if (getFocusedIndex() == -1) {
-                focus(getItemCount() - 1, cell.getTableColumn());
-            } else if (getFocusedIndex() > 0) {
-            	GridRow<T> row = cell.getGridRow();
-            	
-                focus(getGridRow(row, 1), cell.getColumn());
-            }*/
-            GridViewPosition<T> cell = getFocusedCell();
-            if (cell.getRow() <= 0) return;
-            focus(getGridRow(cell.getGridRow(), -1), cell.getColumn());
-        }
-
-        /**
-         * Attempts to move focus to the cell below the currently focused cell.
-         */
-        public void focusBelowCell() {
-            /*
-        	GridViewPosition<T> cell = getFocusedCell();
-            if (getFocusedIndex() == -1) {
-                focus(0, cell.getTableColumn());
-            } else if (getFocusedIndex() != getItemCount() -1) {
-                focus(getFocusedIndex() + 1, cell.getTableColumn());
-            }
-            */
-            GridViewPosition<T> cell = getFocusedCell();
-            System.out.println(cell.getGridRow());
-            System.out.println(cell.getRow() + " Row Cpunt: " + getRowCount());
-            if (cell.getRow() == getRowCount() - 1) return;
-            focus(getGridRow(cell.getGridRow(), 1), cell.getColumn());
-        }
-
-        /**
-         * Attempts to move focus to the cell to the left of the currently focused cell.
-         */
-        public void focusLeftCell() {
-            /*
-        	GridViewPosition<T> cell = getFocusedCell();
-            if (cell.getColumn() <= 0) return;
-            focus(cell.getRow(), getTableColumn(cell.getTableColumn(), -1));
-            */
-        }
-
-        /**
-         * Attempts to move focus to the cell to the right of the the currently focused cell.
-         */
-        public void focusRightCell() {
-        	/*
-            GridViewPosition<T> cell = getFocusedCell();
-            if (cell.getColumn() == getColumnCount() - 1) return;
-            focus(cell.getRow(), getTableColumn(cell.getTableColumn(), 1));
-            */
-        }
-
-        /** {@inheritDoc} */
-        public void focusPrevious() {
-        	/*
-            if (getFocusedIndex() == -1) {
-                focus(0);
-            } else if (getFocusedIndex() > 0) {
-                focusAboveCell();
-            }
-            */
-        }
-
-        /** {@inheritDoc} */
-        public void focusNext() {
-        	/*
-            if (getFocusedIndex() == -1) {
-                focus(0);
-            } else if (getFocusedIndex() != getItemCount() -1) {
-                focusBelowCell();
-            }
-            */
-        }
-
-        /* *********************************************************************
-         *                                                                     *
-         * Private Implementation                                              *
-         *                                                                     *
-         **********************************************************************/
 
         private void updateDefaultFocus() {
             // when the items list totally changes, we should clear out
@@ -975,102 +788,89 @@ public class GridView<T> extends ControlsFXControl {
 
             focus(newValueIndex);
         }
-
-        private int getRowCount() {
-            return gridView.getNumberOfRows();
+        
+        public void focus(int row, int column) {
+        	int index = gridView.getIndexInRowColumn(row, column);
+        	if(index != -1) {
+        		focus(index);
+        	}
+        }
+        
+        /**
+         * Tests whether the row / column at the given location currently has the
+         * focus within the GridView.
+         */
+        public boolean isFocused(int row, int column) {
+            if (column < 0 || row < 0) return false;
+			int focusedIndex = getFocusedIndex();
+			int focusedRow = gridView.getRowFromIndex(focusedIndex);
+			int focusedColumn = gridView.getColumnFromIndex(focusedIndex);
+			if(focusedRow != -1 && focusedColumn != -1) {
+				return focusedRow == row && focusedColumn == column;
+			}
+			return false;
         }
 
-        // Gets a table column to the left or right of the current one, given an offset
-        private GridRow<T> getGridRow(GridRow<T> row, int offset) {
-            int rowIndex = gridView.getVisibleRowIndex(row);
-            int newRowIndex = rowIndex + offset;
-            System.out.println("Row: " + row.getIndex() + ", RowIndex: " + rowIndex + ", NewRowIndex: " + newRowIndex);
-            return gridView.getVisibleRow(newRowIndex);
-        }
-    }
-    
-    public int getVisibleRowIndex(GridRow<T> row) {
-    	System.out.println("getVisibleRowIndex: " + row);
-    	Skin<?> skin = getSkin();
-    	if(skin instanceof GridViewSkin) {
-    		GridViewSkin<?> gskin = (GridViewSkin<?>) skin;
-    		return gskin.getVisibleRowIndex(row.getIndex());
-    	}
-    	return -1;
-    }
-    
-    public final GridRow<T> getVisibleRow(int index) {
-    	System.out.println("getVisibleRow: " + index);
-    	Skin<?> skin = getSkin();
-    	if(skin instanceof GridViewSkin) {
-    		GridViewSkin<T> gskin = (GridViewSkin<T>) skin;
-    		return gskin.getVisibleRow(index);
-    	}
-    	return null;
-    }
-    
-    public int getNumberOfRows() {
-    	System.out.println("getNumberOfRows");
-    	Skin<?> skin = getSkin();
-    	if(skin instanceof GridViewSkin) {
-    		GridViewSkin<T> gskin = (GridViewSkin<T>) skin;
-    		return gskin.getNumberOfRows();
-    	}
-    	return -1;
-    }
-    
-    public int getIndexOfPosition(GridViewPosition<T> pos) {
-    	System.out.println("getIndexOfPosition: " + pos);
-    	Skin<?> skin = getSkin();
-    	if(skin instanceof GridViewSkin) {
-    		GridViewSkin<?> gskin = (GridViewSkin<?>) skin;
-			int rowIndex = pos.getRow();
-			if (rowIndex >= 0) {
-				int numOfRows = gskin.getNumberOfRows();
-				if(rowIndex < numOfRows) {
-					int index = 0;
-					for (int i = 0; i < rowIndex; i++) {
-						index += gskin.getNumberOfColumnsInRow(i);
-					}
-					return index + pos.getColumn();
+        /**
+         * Attempts to move focus to the cell above the currently focused cell.
+         */
+        public void focusAboveCell() {
+			int focusedIndex = getFocusedIndex();
+			if (focusedIndex != -1) {
+				int row = gridView.getRowFromIndex(focusedIndex);
+				int column = gridView.getColumnFromIndex(focusedIndex);
+				if (row != -1 && column != -1) {
+					focus(row - 1, column);
 				}
 			}
-    	}
-    	return -1;
+        }
+
+        /**
+         * Attempts to move focus to the cell below the currently focused cell.
+         */
+        public void focusBelowCell() {
+        	int focusedIndex = getFocusedIndex();
+            if (focusedIndex != -1) {
+            	int row = gridView.getRowFromIndex(focusedIndex);
+            	int column = gridView.getColumnFromIndex(focusedIndex);
+            	if(row != -1 && column != -1) {
+            		focus(row + 1, column);
+            	}
+            }
+        }
+
+        /**
+         * Attempts to move focus to the cell to the left of the currently focused cell.
+         */
+        public void focusLeftCell() {
+        	focusPrevious();
+        }
+
+        /**
+         * Attempts to move focus to the cell to the right of the the currently focused cell.
+         */
+        public void focusRightCell() {
+        	focusNext();
+        }
     }
     
-    public GridViewPosition<T> getPositionFromIndex(int index) {
-    	System.out.println("getPositionFromIndex: " + index);
-    	Skin<?> skin = getSkin();
-    	System.out.println("Skin: " + skin);
-    	//System.out.println("Rows: " + getChildren());
-    	if(skin instanceof GridViewSkin) {
-    		GridViewSkin<?> gskin = (GridViewSkin<?>) skin;
-    		int numOfRows = gskin.getNumberOfRows();
-    		int idx = 0;
-    		System.out.println("Num of Rows: " + numOfRows);
-			for (int i = 0; i < numOfRows; i++) {
-				int columns = gskin.getNumberOfColumnsInRow(i);
-				System.out.println(idx + "<=" + index + "<=" + (idx + columns));
-				if(idx <= index && index <= (idx + columns))
-					return new GridViewPosition<>(this, this.getVisibleRow(i), index - idx);
-				idx += columns;
+    /**************************************************************************
+     * 
+     * Public API
+     * 
+     **************************************************************************/
+    
+    public int getIndexInRowColumn(int row, int column) {
+		if (row >= 0 && column >= 0) {
+	    	Skin<?> skin = getSkin();
+			if (skin instanceof GridViewSkin) {
+				GridViewSkin<?> gskin = (GridViewSkin<?>) skin;
+				int maxCellsInRow = gskin.computeMaxCellsInRow();
+				int index = row * maxCellsInRow + column;
+				return index < getItems().size() ? index : -1;
 			}
-    	} /*else if(skin == null) {
-    		if(index == 0)
-    			return new GridViewPosition<>(this, null, 0);
-    	}*/
-    	return null;
-    }
-    
-    public int getNumberOfColumnsInRow(int row) {
-    	System.out.println("getNumberOfColumnsInRow: " + row);
-    	Skin<?> skin = getSkin();
-    	if(skin instanceof GridViewSkin) {
-    		GridViewSkin<?> gskin = (GridViewSkin<?>) skin;
-    		return gskin.getNumberOfColumnsInRow(row);
-    	}
-    	return -1;
+		}
+		return -1;
     }
     
     /** {@inheritDoc} */
@@ -1078,18 +878,11 @@ public class GridView<T> extends ControlsFXControl {
     public Object queryAccessibleAttribute(AccessibleAttribute attribute, Object... parameters) {
     	switch (attribute) {
             case FOCUS_ITEM: {
-            	System.out.println("GridView: FOCUS_ITEM");
                 Node row = (Node)super.queryAccessibleAttribute(attribute, parameters);
                 if (row == null) return null;
                 Node cell = (Node)row.queryAccessibleAttribute(attribute, parameters);
-                System.out.println("Row: " + row);
-                System.out.println("Cell: " + cell);
                 /* cell equals to null means the row is a placeholder node */
                 return cell != null ?  cell : row;
-            }
-            case FOCUSED: {
-            	System.out.println("Far");
-            	return super.queryAccessibleAttribute(attribute, parameters);
             }
             default: return super.queryAccessibleAttribute(attribute, parameters);
         }

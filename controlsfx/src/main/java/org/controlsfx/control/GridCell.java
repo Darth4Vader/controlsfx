@@ -37,15 +37,10 @@ import javafx.beans.Observable;
 import javafx.beans.WeakInvalidationListener;
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.ReadOnlyObjectWrapper;
-import javafx.beans.property.SimpleObjectProperty;
 import javafx.scene.AccessibleAction;
 import javafx.scene.control.IndexedCell;
-import javafx.scene.control.ListView;
 import javafx.scene.control.Skin;
-import javafx.scene.control.TableCell;
-import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
-import javafx.scene.control.TableView.TableViewFocusModel;
 
 /**
  * A GridCell is created to represent items in the {@link GridView} 
@@ -177,7 +172,6 @@ public class GridCell<T> extends IndexedCell<T> {
             gridView = new ReadOnlyObjectWrapper<>() {
                 private WeakReference<GridView<T>> weakGridViewRef;
                 @Override protected void invalidated() {
-                    //GridView.TableViewSelectionModel<S> sm;
                     GridViewFocusModel<T> fm;
 
                     if (weakGridViewRef != null) {
@@ -185,25 +179,13 @@ public class GridCell<T> extends IndexedCell<T> {
                     }
 
                     if (get() != null) {
-                        /*sm = get().getSelectionModel();
-                        if (sm != null) {
-                            sm.getSelectedCells().addListener(weakSelectedListener);
-                        }*/
-
                         fm = get().getFocusModel();
                         if (fm != null) {
-                            fm.focusedCellProperty().addListener(weakFocusedListener);
+                            fm.focusedIndexProperty().addListener(weakFocusedListener);
                         }
-                        
-                        /*
-                        get().editingCellProperty().addListener(weakEditingListener);
-                        get().getVisibleLeafColumns().addListener(weakVisibleLeafColumnsListener);
-                        */
                         
                         weakGridViewRef = new WeakReference<>(get());
                     }
-
-                    //updateColumnIndex();
                 }
 
                 @Override public Object getBean() {
@@ -227,47 +209,14 @@ public class GridCell<T> extends IndexedCell<T> {
     
     private void cleanUpGridViewListeners(GridView<T> tableView) {
         if (tableView != null) {
-            /*TableView.TableViewSelectionModel<S> sm = tableView.getSelectionModel();
-            if (sm != null) {
-                sm.getSelectedCells().removeListener(weakSelectedListener);
-            }*/
 
             GridViewFocusModel<T> fm = tableView.getFocusModel();
             if (fm != null) {
-                fm.focusedCellProperty().removeListener(weakFocusedListener);
+                fm.focusedIndexProperty().removeListener(weakFocusedListener);
             }
-            
-            /*
-            tableView.editingCellProperty().removeListener(weakEditingListener);
-            tableView.getVisibleLeafColumns().removeListener(weakVisibleLeafColumnsListener);
-            */
         }
     }
-    /*
-    @Override void indexChanged(int oldIndex, int newIndex) {
-        super.indexChanged(oldIndex, newIndex);
-
-        // Ideally we would just use the following two lines of code, rather
-        // than the updateItem() call beneath, but if we do this we end up with
-        // RT-22428 where all the columns are collapsed.
-        // itemDirty = true;
-        // requestLayout();
-        updateItem(oldIndex);
-        updateSelection();
-        updateFocus();
-
-        // Fix for JDK-8150525
-        updateEditing();
-    }
-    */
     private void updateFocus() {
-        final boolean isFocused = isFocused();
-        /*if (! isInCellSelectionMode()) {
-            if (isFocused) {
-                setFocused(false);
-            }
-            return;
-        }*/
 
         final GridView<T> gridView = getGridView();
         final GridRow<T> gridRow = getGridRow();
@@ -279,8 +228,7 @@ public class GridCell<T> extends IndexedCell<T> {
             setFocused(false);
             return;
         }
-        System.out.println("Update Cell Focus: " + getGridRow().getIndex() + " " + index);
-        setFocused(fm.isFocused(getGridRow(), index));
+        setFocused(fm.isFocused(index));
     }
     
     // --- GridRow
@@ -316,10 +264,8 @@ public class GridCell<T> extends IndexedCell<T> {
     /** {@inheritDoc} */
     @Override
     public void executeAccessibleAction(AccessibleAction action, Object... parameters) {
-        System.out.println("Execeute");
     	switch (action) {
             case REQUEST_FOCUS: {
-            	System.out.println("GridCell: REQUEST_FOCUS");
             	GridView<T> gridView = getGridView();
                 if (gridView != null) {
                 	GridViewFocusModel<T> fm = gridView.getFocusModel();

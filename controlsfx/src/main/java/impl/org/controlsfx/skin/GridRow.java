@@ -28,20 +28,16 @@ package impl.org.controlsfx.skin;
 
 import java.lang.ref.WeakReference;
 
+import org.controlsfx.control.GridCell;
 import org.controlsfx.control.GridView;
 import org.controlsfx.control.GridView.GridViewFocusModel;
 
 import javafx.beans.InvalidationListener;
-import javafx.beans.Observable;
 import javafx.beans.WeakInvalidationListener;
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.ReadOnlyObjectWrapper;
-import javafx.beans.property.SimpleObjectProperty;
 import javafx.scene.control.IndexedCell;
 import javafx.scene.control.Skin;
-import javafx.scene.control.TableRow;
-import javafx.scene.control.TableView;
-import javafx.scene.control.TableView.TableViewFocusModel;
 
 /**
  * A GridRow is a container for {@link org.controlsfx.control.GridCell}, and represents a single
@@ -79,29 +75,72 @@ public class GridRow<T> extends IndexedCell<T>{
      * 
      **************************************************************************/
 
+    // Same as selectedListener, but this time for focus events
+    private final InvalidationListener focusedListener = valueModel -> {
+        updateFocus();
+    };
+    
+    private final WeakInvalidationListener weakFocusedListener = new WeakInvalidationListener(focusedListener);
+    
+    // --- GridView
+    private ReadOnlyObjectWrapper<GridView<T>> gridView;
+    private void setGridView(GridView<T> value) {
+        gridViewPropertyImpl().set(value);
+    }
+    public final GridView<T> getGridView() {
+        return gridView == null ? null : gridView.get();
+    }
+
     /**
-     * The {@link GridView} that this GridRow exists within.
+     * The GridView associated with this GridCell.
+     * @return the GridView associated with this GridCell
      */
-    /*public SimpleObjectProperty<GridView<T>> gridViewProperty() {
+    public final ReadOnlyObjectProperty<GridView<T>> gridViewProperty() {
+        return gridViewPropertyImpl().getReadOnlyProperty();
+    }
+
+    private ReadOnlyObjectWrapper<GridView<T>> gridViewPropertyImpl() {
+        if (gridView == null) {
+        	gridView = new ReadOnlyObjectWrapper<>() {
+                private WeakReference<GridView<T>> weakTableViewRef;
+                @Override protected void invalidated() {
+                    GridViewFocusModel<T> fm;
+
+                    if (weakTableViewRef != null) {
+                        GridView<T> oldTableView = weakTableViewRef.get();
+                        if (oldTableView != null) {
+                            fm = oldTableView.getFocusModel();
+                            if (fm != null) {
+                                fm.focusedIndexProperty().removeListener(weakFocusedListener);
+                            }
+                        }
+
+                        weakTableViewRef = null;
+                    }
+
+                    GridView<T> tableView = getGridView();
+                    if (tableView != null) {
+                        fm = tableView.getFocusModel();
+                        if (fm != null) {
+                            fm.focusedIndexProperty().addListener(weakFocusedListener);
+                        }
+                        weakTableViewRef = new WeakReference<>(get());
+                    }
+                }
+
+                @Override
+                public Object getBean() {
+                    return GridRow.this;
+                }
+
+                @Override
+                public String getName() {
+                    return "gridView";
+                }
+            };
+        }
         return gridView;
     }
-    private final SimpleObjectProperty<GridView<T>> gridView = 
-            new SimpleObjectProperty<>(this, "gridView"); //$NON-NLS-1$
-    
-    /**
-     * Sets the {@link GridView} that this GridRow exists within.
-     */
-    /*public final void updateGridView(GridView<T> gridView) {
-        this.gridView.set(gridView);
-    }
-    
-    /**
-     * Returns the {@link GridView} that this GridRow exists within.
-     */
-    /*public GridView<T> getGridView() {
-        return gridView.get();
-    }*/
-
 
 
     @Override
@@ -127,105 +166,37 @@ public class GridRow<T> extends IndexedCell<T>{
 		updateFocus();
     }
     
-    // Same as selectedListener, but this time for focus events
-    private final InvalidationListener focusedListener = valueModel -> {
-        updateFocus();
-    };
-    
-    private final WeakInvalidationListener weakFocusedListener = new WeakInvalidationListener(focusedListener);
-    
-    // --- GridView
-    private ReadOnlyObjectWrapper<GridView<T>> gridView;
-    private void setGridView(GridView<T> value) {
-        gridViewPropertyImpl().set(value);
-    }
-    public final GridView<T> getGridView() {
-        return gridView == null ? null : gridView.get();
-    }
-
-    /**
-     * The GridView associated with this TableCell.
-     * @return the GridView associated with this TableCell
-     */
-    public final ReadOnlyObjectProperty<GridView<T>> gridViewProperty() {
-        return gridViewPropertyImpl().getReadOnlyProperty();
-    }
-
-    private ReadOnlyObjectWrapper<GridView<T>> gridViewPropertyImpl() {
-        if (gridView == null) {
-        	gridView = new ReadOnlyObjectWrapper<>() {
-                private WeakReference<GridView<T>> weakTableViewRef;
-                @Override protected void invalidated() {
-                    //TableView.TableViewSelectionModel<T> sm;
-                    GridViewFocusModel<T> fm;
-
-                    if (weakTableViewRef != null) {
-                        GridView<T> oldTableView = weakTableViewRef.get();
-                        if (oldTableView != null) {
-                            /*sm = oldTableView.getSelectionModel();
-                            if (sm != null) {
-                                sm.getSelectedIndices().removeListener(weakSelectedListener);
-                            }*/
-
-                            fm = oldTableView.getFocusModel();
-                            if (fm != null) {
-                                fm.focusedCellProperty().removeListener(weakFocusedListener);
-                            }
-
-                            //oldTableView.editingCellProperty().removeListener(weakEditingListener);
-                        }
-
-                        weakTableViewRef = null;
-                    }
-
-                    GridView<T> tableView = getGridView();
-                    if (tableView != null) {
-                        /*sm = tableView.getSelectionModel();
-                        if (sm != null) {
-                            sm.getSelectedIndices().addListener(weakSelectedListener);
-                        }*/
-
-                        fm = tableView.getFocusModel();
-                        if (fm != null) {
-                            fm.focusedCellProperty().addListener(weakFocusedListener);
-                        }
-
-                        //tableView.editingCellProperty().addListener(weakEditingListener);
-
-                        weakTableViewRef = new WeakReference<>(get());
-                    }
-                }
-
-                @Override
-                public Object getBean() {
-                    return GridRow.this;
-                }
-
-                @Override
-                public String getName() {
-                    return "gridView";
-                }
-            };
-        }
-        return gridView;
-    }
-    
     private void updateFocus() {
         if (getIndex() == -1) return;
 
         GridView<T> table = getGridView();
         if (table == null) return;
 
-        //TableView.TableViewSelectionModel<T> sm = table.getSelectionModel();
         GridView.GridViewFocusModel<T> fm = table.getFocusModel();
-        if (/*sm == null ||*/ fm == null) return;
+        if (fm == null) return;
 
-        boolean isFocused = ! /*sm.isCellSelectionEnabled() &&*/ fm.isFocused(getIndex());
-        System.out.println("Row Updates Focus " + getIndex());
+        boolean isFocused = fm.isFocused(getIndex());
         setFocused(isFocused);
     }
+    
+    /* *************************************************************************
+     *                                                                         *
+     * Expert API                                                              *
+     *                                                                         *
+     **************************************************************************/
     
     public final void updateGridView(GridView<T> gridRow) {
         this.setGridView(gridRow);
     }
+    
+	@SuppressWarnings("unchecked")
+	public final GridCell<T> getCellAtIndex(int index) {
+		if (index >= 0) {
+			Skin<?> skin = getSkin();
+			if (skin instanceof GridRowSkin) {
+				return ((GridRowSkin<T>) skin).getCellAtIndex(index);
+			}
+		}
+		return null;
+	}
 }
