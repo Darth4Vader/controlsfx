@@ -26,8 +26,19 @@
  */
 package impl.org.controlsfx.skin;
 
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.scene.AccessibleAttribute;
 import javafx.scene.Node;
+import javafx.scene.control.TableCell;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TablePosition;
+import javafx.scene.control.TableView.TableViewFocusModel;
 import javafx.scene.control.skin.CellSkinBase;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 import org.controlsfx.control.GridCell;
 import org.controlsfx.control.GridView;
@@ -45,6 +56,16 @@ public class GridRowSkin<T> extends CellSkinBase<GridRow<T>> {
         // Calling updateCells is handled by GridRow if the index is updated.
         registerChangeListener(getSkinnable().widthProperty(), e -> updateCells());
         registerChangeListener(getSkinnable().heightProperty(), e -> updateCells());
+        
+        registerChangeListener(control.gridViewProperty(), e -> {
+            ObservableList<Node> cells = getChildren();
+        	for (int i = 0, max = cells.size(); i < max; i++) {
+                Node n = cells.get(i);
+                if (n instanceof GridCell) {
+                    ((GridCell)n).updateGridView(getSkinnable().getGridView());
+                }
+            }
+        });
     }
     
     /**
@@ -163,6 +184,60 @@ public class GridRowSkin<T> extends CellSkinBase<GridRow<T>> {
             child.relocate(xPos + horizontalCellSpacing, yPos + verticalCellSpacing);
             child.resize(cellWidth, cellHeight);
             xPos = xPos + horizontalCellSpacing + cellWidth + horizontalCellSpacing;
+        }
+    }
+    
+    /** {@inheritDoc} */
+    @Override protected Object queryAccessibleAttribute(AccessibleAttribute attribute, Object... parameters) {
+        switch (attribute) {
+            /*case SELECTED_ITEMS: {
+                if (getTableView().getSelectionModel() != null) {
+                    // FIXME this could be optimised to iterate over cellsMap only
+                    // (selectedCells could be big, cellsMap is much smaller)
+                    List<Node> selection = new ArrayList<>();
+                    int index = getSkinnable().getIndex();
+                    for (TablePosition<T,?> pos : getTableView().getSelectionModel().getSelectedCells()) {
+                        if (pos.getRow() == index) {
+                            TableColumn<T,?> column = pos.getTableColumn();
+                            if (column == null) {
+                                /* This is the row-based case */
+                                /*column = getTableView().getVisibleLeafColumn(0);
+                            }
+                            TableCell<T,?> cell = cellsMap.get(column).get();
+                            if (cell != null) selection.add(cell);
+                        }
+                        return FXCollections.observableArrayList(selection);
+                    }
+                }
+                return FXCollections.observableArrayList();
+            }
+            case CELL_AT_ROW_COLUMN: {
+                int colIndex = (Integer)parameters[1];
+                TableColumn<T,?> column = getTableView().getVisibleLeafColumn(colIndex);
+                if (cellsMap.containsKey(column)) {
+                    return cellsMap.get(column).get();
+                }
+                return null;
+            }*/
+            case FOCUS_ITEM: {
+                /*
+            	TableViewFocusModel<T> fm = getTableView().getFocusModel();
+                TablePosition<T,?> focusedCell = fm.getFocusedCell();
+                TableColumn<T,?> column = focusedCell.getTableColumn();
+                if (column == null) {
+                    // This is the row-based case
+                    column = getTableView().getVisibleLeafColumn(0);
+                }
+                if (cellsMap.containsKey(column)) {
+                    return cellsMap.get(column).get();
+                }
+                return null;
+                */
+            	System.out.println("GridRowSkin: FOCUS_ITEM " + Arrays.asList(parameters));
+            	return super.queryAccessibleAttribute(attribute, parameters);
+            }
+            default:
+                return super.queryAccessibleAttribute(attribute, parameters);
         }
     }
 }

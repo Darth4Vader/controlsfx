@@ -104,6 +104,12 @@ public class GridCell<T> extends IndexedCell<T> {
         return new GridCellSkin<>(this);
     }
 	
+	@Override
+    protected void updateItem(T item, boolean empty) {
+		super.updateItem(item, empty);
+		updateFocus();
+    }
+	
 	
 	
 	/**************************************************************************
@@ -216,7 +222,7 @@ public class GridCell<T> extends IndexedCell<T> {
      * Sets the {@link GridView} that this GridCell exists within.
      */
     public final void updateGridView(GridView<T> gridView) {
-        this.gridView.set(gridView);
+        setGridView(gridView);
     }
     
     private void cleanUpGridViewListeners(GridView<T> tableView) {
@@ -273,7 +279,7 @@ public class GridCell<T> extends IndexedCell<T> {
             setFocused(false);
             return;
         }
-
+        System.out.println("Update Cell Focus: " + getGridRow().getIndex() + " " + index);
         setFocused(fm.isFocused(getGridRow(), index));
     }
     
@@ -301,12 +307,19 @@ public class GridCell<T> extends IndexedCell<T> {
         this.setGridRow(gridRow);
     }
     
+    /* *************************************************************************
+     *                                                                         *
+     * Accessibility handling                                                  *
+     *                                                                         *
+     **************************************************************************/
+    
     /** {@inheritDoc} */
     @Override
     public void executeAccessibleAction(AccessibleAction action, Object... parameters) {
-        switch (action) {
+        System.out.println("Execeute");
+    	switch (action) {
             case REQUEST_FOCUS: {
-            	System.out.println("Batman");
+            	System.out.println("GridCell: REQUEST_FOCUS");
             	GridView<T> gridView = getGridView();
                 if (gridView != null) {
                 	GridViewFocusModel<T> fm = gridView.getFocusModel();

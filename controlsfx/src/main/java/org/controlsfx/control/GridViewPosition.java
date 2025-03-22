@@ -126,7 +126,7 @@ public class GridViewPosition<T> extends GridViewPositionBase<GridRow<T>> {
      * @return a string representation of this {@code TablePosition} object.
      */
     @Override public String toString() {
-        return "GridViewPosition [ row: " + getGridRow() + ", column: " + getColumn() + ", "
+        return "GridViewPosition [ row: " + (getGridRow() != null ? getRow() : null) + ", column: " + getColumn() + ", "
                 + "gridView: " + getGridView() + " ]";
     }
 }

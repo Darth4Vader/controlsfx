@@ -225,6 +225,7 @@ public class GridViewSkin<T> extends VirtualContainerBase<GridView<T>, GridRow<T
     protected Object queryAccessibleAttribute(AccessibleAttribute attribute, Object... parameters) {
     	switch (attribute) {
             case FOCUS_ITEM: {
+            	System.out.println("GridViewSkin: FOCUS_ITEM");
             	GridView<T> skinnable = getSkinnable();
             	if(skinnable != null) {
                     FocusModel<?> fm = skinnable.getFocusModel();
@@ -237,6 +238,7 @@ public class GridViewSkin<T> extends VirtualContainerBase<GridView<T>, GridRow<T
                     }
 
                     int focusedIndex = fm.getFocusedIndex();
+                    System.out.println("Focused Index: " + focusedIndex);
                     if (focusedIndex == -1) {
                         /*if (placeholderRegion != null && placeholderRegion.isVisible()) {
                             return placeholderRegion.getChildren().get(0);
@@ -251,6 +253,9 @@ public class GridViewSkin<T> extends VirtualContainerBase<GridView<T>, GridRow<T
             	}
             	return null;
             }
+            /*case: AccessibleAttribute.focus {
+            	
+            }*/
             default: return super.queryAccessibleAttribute(attribute, parameters);
         }
     }
@@ -270,7 +275,7 @@ public class GridViewSkin<T> extends VirtualContainerBase<GridView<T>, GridRow<T
 	public final int getNumberOfColumnsInRow(int row) {
 		if (row < 0 || row >= getNumberOfRows())
 			return -1;
-		GridRow<?> cell = getFlow().getVisibleCell(row);
+		GridRow<?> cell = getFlow().getPrivateCell(row);
 		return cell.getChildrenUnmodifiable().size();
 	}
 }
