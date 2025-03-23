@@ -29,6 +29,7 @@ package org.controlsfx.control;
 import java.lang.ref.WeakReference;
 
 import org.controlsfx.control.GridView.GridViewFocusModel;
+import org.controlsfx.control.GridView.GridViewMultipleSelectionModel;
 
 import impl.org.controlsfx.skin.GridCellSkin;
 import impl.org.controlsfx.skin.GridRow;
@@ -37,8 +38,12 @@ import javafx.beans.Observable;
 import javafx.beans.WeakInvalidationListener;
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.ReadOnlyObjectWrapper;
+import javafx.collections.ListChangeListener;
+import javafx.collections.WeakListChangeListener;
 import javafx.scene.AccessibleAction;
 import javafx.scene.control.IndexedCell;
+import javafx.scene.control.ListView;
+import javafx.scene.control.SelectionModel;
 import javafx.scene.control.Skin;
 import javafx.scene.control.TableView;
 
@@ -102,6 +107,7 @@ public class GridCell<T> extends IndexedCell<T> {
 	@Override
     protected void updateItem(T item, boolean empty) {
 		super.updateItem(item, empty);
+		updateSelection();
 		updateFocus();
     }
 	
@@ -142,11 +148,23 @@ public class GridCell<T> extends IndexedCell<T> {
      * 
      **************************************************************************/
     
-    // same as above, but for focus
+    /*
+     * This is the list observer we use to keep an eye on the SelectedCells
+     * ObservableList in the table view. Because it is possible that the table can
+     * be mutated, we create this observer here, and add/remove it from the
+     * storeTableView method.
+     */
+    private ListChangeListener<Integer> selectedListener = c -> {
+    	updateSelection();
+    };
+	
+	// same as above, but for focus
     private final InvalidationListener focusedListener = value -> {
         updateFocus();
     };
     
+    private final WeakListChangeListener<Integer> weakSelectedListener =
+            new WeakListChangeListener<>(selectedListener);
     private final WeakInvalidationListener weakFocusedListener =
             new WeakInvalidationListener(focusedListener);
     
@@ -172,6 +190,7 @@ public class GridCell<T> extends IndexedCell<T> {
             gridView = new ReadOnlyObjectWrapper<>() {
                 private WeakReference<GridView<T>> weakGridViewRef;
                 @Override protected void invalidated() {
+                	GridViewMultipleSelectionModel<T> sm;
                     GridViewFocusModel<T> fm;
 
                     if (weakGridViewRef != null) {
@@ -179,6 +198,11 @@ public class GridCell<T> extends IndexedCell<T> {
                     }
 
                     if (get() != null) {
+                        sm = get().getSelectionModel();
+                        if (sm != null) {
+                            sm.getSelectedIndices().addListener(weakSelectedListener);
+                        }
+                    	
                         fm = get().getFocusModel();
                         if (fm != null) {
                             fm.focusedIndexProperty().addListener(weakFocusedListener);
@@ -209,13 +233,36 @@ public class GridCell<T> extends IndexedCell<T> {
     
     private void cleanUpGridViewListeners(GridView<T> tableView) {
         if (tableView != null) {
-
+            GridViewMultipleSelectionModel<T> sm = tableView.getSelectionModel();
+            if (sm != null) {
+                sm.getSelectedIndices().removeListener(weakSelectedListener);
+            }
+        	
             GridViewFocusModel<T> fm = tableView.getFocusModel();
             if (fm != null) {
                 fm.focusedIndexProperty().removeListener(weakFocusedListener);
             }
         }
     }
+    
+    private void updateSelection() {
+        if (isEmpty()) return;
+        int index = getIndex();
+        GridView<T> gridView = getGridView();
+        if (index == -1 || gridView == null) return;
+
+        SelectionModel<T> sm = gridView.getSelectionModel();
+        if (sm == null) {
+            updateSelected(false);
+            return;
+        }
+
+        boolean isSelected = sm.isSelected(index);
+        if (isSelected() == isSelected) return;
+
+        updateSelected(isSelected);
+    }
+    
     private void updateFocus() {
 
         final GridView<T> gridView = getGridView();

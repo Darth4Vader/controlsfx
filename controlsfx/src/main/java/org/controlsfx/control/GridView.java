@@ -27,8 +27,11 @@
 package org.controlsfx.control;
 
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 
 import org.controlsfx.control.cell.ColorGridCell;
@@ -44,6 +47,7 @@ import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.collections.WeakListChangeListener;
+import javafx.collections.ListChangeListener.Change;
 import javafx.css.CssMetaData;
 import javafx.css.StyleConverter;
 import javafx.css.Styleable;
@@ -55,9 +59,13 @@ import javafx.scene.control.Cell;
 import javafx.scene.control.Control;
 import javafx.scene.control.FocusModel;
 import javafx.scene.control.ListCell;
+import javafx.scene.control.MultipleSelectionModel;
 import javafx.scene.control.Skin;
+import javafx.scene.control.TableColumnBase;
+import javafx.scene.control.TableSelectionModel;
 import javafx.scene.paint.Color;
 import javafx.util.Callback;
+import javafx.util.Pair;
 
 /**
  * A GridView is a virtualised control for displaying {@link #getItems()} in a
@@ -135,6 +143,8 @@ public class GridView<T> extends ControlsFXControl {
         
         // ...focus model
         setFocusModel(new GridView.GridViewFocusModel<>(this));
+        
+        setSelectionModel(new GridViewMultipleSelectionModel<>(this));
         
         
 		skinProperty().addListener((ov, oldSkin, newSkin) -> {
@@ -628,6 +638,40 @@ public class GridView<T> extends ControlsFXControl {
         return getClassCssMetaData();
     }
     
+    // --- Selection Model
+    private ObjectProperty<GridViewMultipleSelectionModel<T>> selectionModel = new SimpleObjectProperty<>(this, "selectionModel");
+
+    /**
+     * Sets the {@link MultipleSelectionModel} to be used in the GridView.
+     * Despite a GridView requiring a <b>Multiple</b>SelectionModel, it is possible
+     * to configure it to only allow single selection (see
+     * {@link MultipleSelectionModel#setSelectionMode(javafx.scene.control.SelectionMode)}
+     * for more information).
+     * @param value the MultipleSelectionModel to be used in this GridView
+     */
+    public final void setSelectionModel(GridViewMultipleSelectionModel<T> value) {
+        selectionModelProperty().set(value);
+    }
+
+    /**
+     * Returns the currently installed selection model.
+     * @return the currently installed selection model
+     */
+    public final GridViewMultipleSelectionModel<T> getSelectionModel() {
+        return selectionModel == null ? null : selectionModel.get();
+    }
+
+    /**
+     * The SelectionModel provides the API through which it is possible
+     * to select single or multiple items within a GirdView, as  well as inspect
+     * which items have been selected by the user. Note that it has a generic
+     * type that must match the type of the GridView itself.
+     * @return the selectionModel property
+     */
+    public final ObjectProperty<GridViewMultipleSelectionModel<T>> selectionModelProperty() {
+        return selectionModel;
+    }
+    
     // --- Focus Model
     private ObjectProperty<GridViewFocusModel<T>> focusModel;
     public final void setFocusModel(GridViewFocusModel<T> value) {
@@ -647,6 +691,432 @@ public class GridView<T> extends ControlsFXControl {
             focusModel = new SimpleObjectProperty<>(this, "focusModel");
         }
         return focusModel;
+    }
+    
+    // package for testing
+    public static class GridViewMultipleSelectionModel<T> extends TableSelectionModel<T> {
+
+        /* *********************************************************************
+         *                                                                     *
+         * Constructors                                                        *
+         *                                                                     *
+         **********************************************************************/
+    	
+    	private Method startAtomic;
+    	private Method stopAtomic;
+    	private Method shiftSelection;
+
+        public GridViewMultipleSelectionModel(final GridView<T> gridView) {
+            if (gridView == null) {
+                throw new IllegalArgumentException("GridView can not be null");
+            }
+
+            this.gridView = gridView;
+            
+            try {
+	            startAtomic = TableSelectionModel.class.getSuperclass().getDeclaredMethod("startAtomic");
+	            stopAtomic = TableSelectionModel.class.getSuperclass().getDeclaredMethod("stopAtomic");
+	            shiftSelection = TableSelectionModel.class.getSuperclass().getDeclaredMethod("shiftSelection", List.class, Callback.class);
+	            shiftSelection.trySetAccessible();
+            }
+			catch (Exception e) {
+				throw new IllegalArgumentException("Cannot Access Atmoic Methods", e);
+			}
+
+            /*
+             * The following two listeners are used in conjunction with
+             * SelectionModel.select(T obj) to allow for a developer to select
+             * an item that is not actually in the data model. When this occurs,
+             * we actively try to find an index that matches this object, going
+             * so far as to actually watch for all changes to the items list,
+             * rechecking each time.
+             */
+            itemsObserver = new InvalidationListener() {
+                private WeakReference<ObservableList<T>> weakItemsRef = new WeakReference<>(gridView.getItems());
+
+                @Override public void invalidated(Observable observable) {
+                    ObservableList<T> oldItems = weakItemsRef.get();
+                    weakItemsRef = new WeakReference<>(gridView.getItems());
+                    updateItemsObserver(oldItems, gridView.getItems());
+                }
+            };
+
+            this.gridView.itemsProperty().addListener(new WeakInvalidationListener(itemsObserver));
+            if (gridView.getItems() != null) {
+                this.gridView.getItems().addListener(weakItemsContentObserver);
+            }
+
+            updateItemCount();
+
+            updateDefaultSelection();
+        }
+
+        // watching for changes to the items list content
+        private final ListChangeListener<T> itemsContentObserver = new ListChangeListener<>() {
+            @Override public void onChanged(Change<? extends T> c) {
+            	try {
+	                updateItemCount();
+	
+	                boolean doSelectionUpdate = true;
+	
+	                while (c.next()) {
+	                    final T selectedItem = getSelectedItem();
+	                    final int selectedIndex = getSelectedIndex();
+	
+	                    if (gridView.getItems() == null || gridView.getItems().isEmpty()) {
+	                        clearSelection();
+	                    } else if (selectedIndex == -1 && selectedItem != null) {
+	                        int newIndex = gridView.getItems().indexOf(selectedItem);
+	                        if (newIndex != -1) {
+	                            setSelectedIndex(newIndex);
+	                            doSelectionUpdate = false;
+	                        }
+	                    } else if (c.wasRemoved() &&
+	                            c.getRemovedSize() == 1 &&
+	                            ! c.wasAdded() &&
+	                            selectedItem != null &&
+	                            selectedItem.equals(c.getRemoved().get(0))) {
+	                        // Bug fix for RT-28637
+	                        if (getSelectedIndex() < getItemCount()) {
+	                            final int previousRow = selectedIndex == 0 ? 0 : selectedIndex - 1;
+	                            T newSelectedItem = getModelItem(previousRow);
+	                            if (! selectedItem.equals(newSelectedItem)) {
+	                            	startAtomic.invoke(this);
+	                            	//startAtomic();
+	                                clearSelection(selectedIndex);
+	                                stopAtomic.invoke(this);
+	                                //stopAtomic();
+	                                select(newSelectedItem);
+	                            }
+	                        }
+	                    }
+	                }
+	
+	                if (doSelectionUpdate) {
+	                    updateSelection(c);
+	                }
+            	}
+				catch (Exception e) {
+					throw new IllegalArgumentException("Problem with itemsContentObserver", e);
+				}
+            }
+        };
+
+        // watching for changes to the items list
+        private final InvalidationListener itemsObserver;
+
+        private WeakListChangeListener<T> weakItemsContentObserver =
+                new WeakListChangeListener<>(itemsContentObserver);
+
+
+
+
+        /* *********************************************************************
+         *                                                                     *
+         * Internal properties                                                 *
+         *                                                                     *
+         **********************************************************************/
+
+        private final GridView<T> gridView;
+
+        private int itemCount = 0;
+
+        private int previousModelSize = 0;
+
+        // Listen to changes in the listview items list, such that when it
+        // changes we can update the selected indices bitset to refer to the
+        // new indices.
+        // At present this is basically a left/right shift operation, which
+        // seems to work ok.
+        private void updateSelection(Change<? extends T> c) {
+//            // debugging output
+//            System.out.println(gridView.getId());
+//            if (c.wasAdded()) {
+//                System.out.println("\tAdded size: " + c.getAddedSize() + ", Added sublist: " + c.getAddedSubList());
+//            }
+//            if (c.wasRemoved()) {
+//                System.out.println("\tRemoved size: " + c.getRemovedSize() + ", Removed sublist: " + c.getRemoved());
+//            }
+//            if (c.wasReplaced()) {
+//                System.out.println("\tWas replaced");
+//            }
+//            if (c.wasPermutated()) {
+//                System.out.println("\tWas permutated");
+//            }
+            c.reset();
+
+            List<Pair<Integer, Integer>> shifts = new ArrayList<>();
+            while (c.next()) {
+                if (c.wasReplaced()) {
+                    if (c.getList().isEmpty()) {
+                        // the entire items list was emptied - clear selection
+                        clearSelection();
+                    } else {
+                        int index = getSelectedIndex();
+
+                        if (previousModelSize == c.getRemovedSize()) {
+                            // all items were removed from the model
+                            clearSelection();
+                        } else if (index < getItemCount() && index >= 0) {
+                            // Fix for RT-18969: the list had setAll called on it
+                            // Use of makeAtomic is a fix for RT-20945
+                        	try {
+	                        	startAtomic.invoke(this);
+	                        	//startAtomic();
+	                            clearSelection(index);
+	                            stopAtomic.invoke(this);
+	                            //stopAtomic();
+	                            select(index);
+                        	}
+							catch (Exception e) {
+								throw new IllegalArgumentException("Problem with updateSelection", e);
+							}
+                        } else {
+                            // Fix for RT-22079
+                            clearSelection();
+                        }
+                    }
+                } else if (c.wasAdded() || c.wasRemoved()) {
+                    int shift = c.wasAdded() ? c.getAddedSize() : -c.getRemovedSize();
+                    shifts.add(new Pair<>(c.getFrom(), shift));
+                } else if (c.wasPermutated()) {
+
+                    // General approach:
+                    //   -- detected a sort has happened
+                    //   -- Create a permutation lookup map (1)
+                    //   -- dump all the selected indices into a list (2)
+                    //   -- clear the selected items / indexes (3)
+                    //   -- create a list containing the new indices (4)
+                    //   -- for each previously-selected index (5)
+                    //     -- if index is in the permutation lookup map
+                    //       -- add the new index to the new indices list
+                    //   -- Perform batch selection (6)
+
+                    // (1)
+                    int length = c.getTo() - c.getFrom();
+                    HashMap<Integer, Integer> pMap = new HashMap<>(length);
+                    for (int i = c.getFrom(); i < c.getTo(); i++) {
+                        pMap.put(i, c.getPermutation(i));
+                    }
+
+                    // (2)
+                    List<Integer> selectedIndices = new ArrayList<>(getSelectedIndices());
+
+
+                    // (3)
+                    clearSelection();
+
+                    // (4)
+                    List<Integer> newIndices = new ArrayList<>(getSelectedIndices().size());
+
+                    // (5)
+                    for (int i = 0; i < selectedIndices.size(); i++) {
+                        int oldIndex = selectedIndices.get(i);
+
+                        if (pMap.containsKey(oldIndex)) {
+                            Integer newIndex = pMap.get(oldIndex);
+                            newIndices.add(newIndex);
+                        }
+                    }
+
+                    // (6)
+                    if (!newIndices.isEmpty()) {
+                        if (newIndices.size() == 1) {
+                            select(newIndices.get(0));
+                        } else {
+                            int[] ints = new int[newIndices.size() - 1];
+                            for (int i = 0; i < newIndices.size() - 1; i++) {
+                                ints[i] = newIndices.get(i + 1);
+                            }
+                            selectIndices(newIndices.get(0), ints);
+                        }
+                    }
+                }
+            }
+
+            if (!shifts.isEmpty()) {
+            	// Not Working Problem
+            	/*try {
+            		shiftSelection.invoke((TableSelectionModel.class.getSuperclass()).cast(this), shifts, null);
+            	}
+                catch (Exception e) {
+                	e.printStackTrace();
+                }*/
+                //shiftSelection(shifts, null);
+            }
+
+            previousModelSize = getItemCount();
+        }
+
+
+
+        /* *********************************************************************
+         *                                                                     *
+         * Public selection API                                                *
+         *                                                                     *
+         **********************************************************************/
+
+        /** {@inheritDoc} */
+        @Override public void selectAll() {
+            // when a selectAll happens, the anchor should not change, so we store it
+            // before, and restore it afterwards
+            final int anchor = ListCellBehavior.getAnchor(gridView, -1);
+            super.selectAll();
+            ListCellBehavior.setAnchor(gridView, anchor, false);
+        }
+
+        /** {@inheritDoc} */
+        @Override public void clearAndSelect(int row) {
+            ListCellBehavior.setAnchor(gridView, row, false);
+            super.clearAndSelect(row);
+        }
+
+        /** {@inheritDoc} */
+        @Override protected void focus(int row) {
+            if (gridView.getFocusModel() == null) return;
+            gridView.getFocusModel().focus(row);
+
+            gridView.notifyAccessibleAttributeChanged(AccessibleAttribute.FOCUS_ITEM);
+        }
+
+        /** {@inheritDoc} */
+        @Override protected int getFocusedIndex() {
+            if (gridView.getFocusModel() == null) return -1;
+            return gridView.getFocusModel().getFocusedIndex();
+        }
+
+        @Override protected int getItemCount() {
+            return itemCount;
+        }
+
+        @Override protected T getModelItem(int index) {
+            List<T> items = gridView.getItems();
+            if (items == null) return null;
+            if (index < 0 || index >= itemCount) return null;
+
+            return items.get(index);
+        }
+        
+        public void select(int row, int column) {
+        	int index = gridView.getIndexInRowColumn(row, column);
+        	if(index != -1) {
+        		select(index);
+        	}
+        }
+        
+        /**
+         * Attempts to move focus to the cell above the currently focused cell.
+         */
+        @Override public void selectAboveCell() {
+			int focusedIndex = getFocusedIndex();
+			if (focusedIndex != -1) {
+				int row = gridView.getRowFromIndex(focusedIndex);
+				int column = gridView.getColumnFromIndex(focusedIndex);
+				if (row != -1 && column != -1) {
+					select(row - 1, column);
+				}
+			}
+        }
+
+        /**
+         * Attempts to move focus to the cell below the currently focused cell.
+         */
+        @Override public void selectBelowCell() {
+        	int focusedIndex = getFocusedIndex();
+            if (focusedIndex != -1) {
+            	int row = gridView.getRowFromIndex(focusedIndex);
+            	int column = gridView.getColumnFromIndex(focusedIndex);
+            	if(row != -1 && column != -1) {
+            		select(row + 1, column);
+            	}
+            }
+        }
+
+        /**
+         * Attempts to move focus to the cell to the left of the currently focused cell.
+         */
+        @Override public void selectLeftCell() {
+        	selectPrevious();
+        }
+
+        /**
+         * Attempts to move focus to the cell to the right of the the currently focused cell.
+         */
+        @Override public void selectRightCell() {
+        	selectNext();
+        }
+
+
+        /* *********************************************************************
+         *                                                                     *
+         * Private implementation                                              *
+         *                                                                     *
+         **********************************************************************/
+
+        private void updateItemCount() {
+            if (gridView == null) {
+                itemCount = -1;
+            } else {
+                List<T> items = gridView.getItems();
+                itemCount = items == null ? -1 : items.size();
+            }
+        }
+
+        private void updateItemsObserver(ObservableList<T> oldList, ObservableList<T> newList) {
+            // update listeners
+            if (oldList != null) {
+                oldList.removeListener(weakItemsContentObserver);
+            }
+            if (newList != null) {
+                newList.addListener(weakItemsContentObserver);
+            }
+
+            updateItemCount();
+            updateDefaultSelection();
+        }
+
+        private void updateDefaultSelection() {
+            // when the items list totally changes, we should clear out
+            // the selection and focus
+            int newSelectionIndex = -1;
+            int newFocusIndex = -1;
+            if (gridView.getItems() != null) {
+                T selectedItem = getSelectedItem();
+                if (selectedItem != null) {
+                    newSelectionIndex = gridView.getItems().indexOf(selectedItem);
+                    newFocusIndex = newSelectionIndex;
+                }
+
+                // we put focus onto the first item, if there is at least
+                // one item in the list
+                
+                /*if (gridView.selectFirstRowByDefault && newFocusIndex == -1) {
+                    newFocusIndex = gridView.getItems().size() > 0 ? 0 : -1;
+                }*/
+            }
+
+            clearSelection();
+            select(newSelectionIndex);
+//            focus(newFocusIndex);
+        }
+        
+        
+        /***************************************************************************
+         *                                                                         *
+         * Ignore Methods, Because This Is Not a TableView                                                    *
+         *                                                                         *
+         **************************************************************************/
+        
+		@Override
+		public boolean isSelected(int row, TableColumnBase<T, ?> column) { return false; }
+		@Override
+		public void select(int row, TableColumnBase<T, ?> column) {}
+		@Override
+		public void clearAndSelect(int row, TableColumnBase<T, ?> column) {}
+		@Override
+		public void clearSelection(int row, TableColumnBase<T, ?> column) {}
+		@Override
+		public void selectRange(int minRow, TableColumnBase<T, ?> minColumn, int maxRow, TableColumnBase<T, ?> maxColumn) {}
     }
     
     /**
