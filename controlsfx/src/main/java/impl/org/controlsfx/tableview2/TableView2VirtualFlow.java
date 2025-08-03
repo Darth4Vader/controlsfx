@@ -46,7 +46,7 @@ import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
 
-final class TableView2VirtualFlow<T extends IndexedCell<?>> extends VirtualFlow<T> {
+public final class TableView2VirtualFlow<T extends IndexedCell<?>> extends VirtualFlow<T> {
     
     /***************************************************************************
      * * Private Fields * *
@@ -416,5 +416,16 @@ final class TableView2VirtualFlow<T extends IndexedCell<?>> extends VirtualFlow<
             skin.hBarValue.clear();
         }
     };
+    
+    @Override
+    public T getLastVisibleCellWithinViewport() {
+    	return super.getLastVisibleCellWithinViewport();
+    }
+    
+    @Override
+    public T getFirstVisibleCellWithinViewport() {
+		return super.getFirstVisibleCellWithinViewport();
+	}
+    
 }
 

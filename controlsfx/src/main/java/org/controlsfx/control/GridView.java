@@ -36,6 +36,7 @@ import java.util.List;
 
 import org.controlsfx.control.cell.ColorGridCell;
 
+import com.sun.javafx.scene.control.behavior.ListCellBehavior;
 import impl.org.controlsfx.skin.GridViewSkin;
 import javafx.beans.InvalidationListener;
 import javafx.beans.Observable;
